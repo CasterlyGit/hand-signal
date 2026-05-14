@@ -174,6 +174,12 @@ Roadmap issue: render the last gesture as a tiny glyph in the puck corner.
 
 ---
 
+## Used in
+
+- **[CasterlyGit/realm](https://github.com/CasterlyGit/realm)** — a browser-based dragon-flight game where the same six-gesture vocabulary controls the dragon in real time: hand position drives yaw + pitch, ✋ open palm flaps the wings, ✊ closed fist breathes fire, ✌ peace sign casts the dragon's signature skill. Implemented browser-side with `@mediapipe/tasks-vision` (the JS SDK) and the same finger-extension classifier approach as this repo. [Live demo](https://casterlygit.github.io/realm/).
+
+---
+
 ## Why MediaPipe?
 
 - Runs entirely on CPU. Models ship with the package.
