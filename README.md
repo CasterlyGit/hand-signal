@@ -2,7 +2,9 @@
 
 > Hands-free confirmations for Claude Code. Hold a gesture in front of your webcam, the agent continues. MediaPipe Hands + a tiny classifier, all local, all free.
 
-**Status:** v0.1 — macOS focus, Linux best-effort. Six gestures: ✓ tick, ✗ cross, 👍 thumbs-up, 👎 thumbs-down, ✋ open palm, ✊ fist.
+**Status:** v0.2 — `handsignal ask` ships a focused, always-on-top confirmation popup with three gestures (👍 / 👎 / ✊) that exits with a code any script can act on. macOS focus, Linux best-effort.
+
+> **New in v0.2:** `handsignal ask "Approve this action?"` — a self-contained gesture decision window. Pops to the front, blocks until you signal, flashes the result, exits. Advisory by default: the human still clicks the final button in Claude Code. Ready to wire into a `PreToolUse` hook when you trust it.
 
 ---
 
@@ -74,16 +76,43 @@ Or flip `output.keystrokes_enabled = true` in `~/.config/hand-signal/config.toml
 
 ## Usage
 
+### `handsignal ask` — focused confirmation popup (v0.2)
+
+```bash
+handsignal ask "Should Claude run: rm -rf node_modules?"
+```
+
+Opens a window with three big choices. Hold the gesture ~400ms; result flashes 1.5s; window closes. Exit codes:
+
+| code | meaning | gesture |
+|---|---|---|
+| 0 | approve  | 👍 thumbs up |
+| 1 | deny     | 👎 thumbs down |
+| 2 | manual   | ✊ fist (user will handle it) |
+| 3 | timeout  | — |
+| 4 | quit / esc | — |
+
+A drop-in shell wrapper lives at `scripts/claude-approve.sh` — use it from any Claude Code `PreToolUse` hook, CI gate, or just by hand:
+
+```bash
+./scripts/claude-approve.sh "Push to main?" && git push origin main
+```
+
+### `handsignal listen` — always-on streaming daemon (v0.1)
+
 ```bash
 # Print mode — see what's detected without affecting anything
 handsignal listen
+
+# Side-panel preview window with live event log
+handsignal listen --preview
 
 # Keystroke mode — gestures fire keystrokes into the focused window
 handsignal listen --keystrokes
 
 # Websocket mode — for curby / custom integrations
 handsignal listen --websocket
-# then: wscat -c ws://localhost:8765   # or any ws client
+# then: wscat -c ws://localhost:8765
 
 # Show current config
 handsignal config
@@ -161,12 +190,14 @@ Alternatives considered:
 
 ## Roadmap
 
-- [ ] Custom air-drawn glyphs (✓, →, ⟲, ⌫, personal sigil). Train tiny classifier on user-recorded samples. (Issue #1)
+- [x] **v0.2** — `handsignal ask` focused confirmation popup
+- [ ] Wire `claude-approve.sh` into Claude Code `PreToolUse` hook for risky Bash patterns (`rm -rf`, `git push --force`, `curl | sh`, etc.) — pending user trust
+- [ ] Custom air-drawn glyphs (✓, →, ⟲, ⌫, personal sigil). (Issue #1)
 - [ ] curby puck integration — render last gesture in puck corner. (Issue #2)
-- [ ] MCP server transport — Claude Code talks to gesture state via MCP. (Issue #3)
-- [ ] Per-app keymaps — different gesture → keystroke depending on focused window. (Issue #4)
+- [ ] MCP server transport — Claude reads gesture state via MCP. (Issue #3)
+- [ ] Per-app keymaps. (Issue #4)
 - [ ] Linux support — Wayland keystroke injection. (Issue #5)
-- [ ] Streaming gesture preview — webcam overlay window for tuning. (Issue #6)
+- [ ] Streaming gesture preview tuning UX. (Issue #6)
 
 ---
 
