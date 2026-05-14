@@ -1,0 +1,483 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>hand-signal — hands-free confirmations for Claude Code</title>
+<meta name="description" content="Webcam gesture popup: thumbs-up approves, thumbs-down denies, fist hands control back to you. Local MediaPipe Hands, no cloud round-trip." />
+<style>
+  :root {
+    --bg: #0a0b0f;
+    --bg-elev: #14161d;
+    --bg-card: #1a1d27;
+    --text: #f1f3f5;
+    --text-dim: #7a8190;
+    --text-faint: #4a5160;
+    --accent: #b487ff;
+    --accent-glow: rgba(180, 135, 255, 0.5);
+    --accent-soft: rgba(180, 135, 255, 0.12);
+    --green: #61d99b;
+    --red:   #ff7e8a;
+    --lav:   #b9bff0;
+    --warm:  #ffb547;
+    --mono: 'SF Mono', ui-monospace, Menlo, Consolas, monospace;
+    --body: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { background: var(--bg); color: var(--text); font-family: var(--body); -webkit-font-smoothing: antialiased; min-height: 100vh; }
+  body {
+    background:
+      radial-gradient(900px 600px at 10% -10%, rgba(180, 135, 255, 0.08), transparent 60%),
+      radial-gradient(700px 500px at 110% 60%, rgba(97, 217, 155, 0.05), transparent 60%),
+      var(--bg);
+  }
+  .wrap { max-width: 980px; margin: 0 auto; padding: 48px 24px 80px; }
+  header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 36px; }
+  .brand { display: flex; align-items: center; gap: 14px; }
+  .logo {
+    width: 38px; height: 38px; border-radius: 9px;
+    background: linear-gradient(135deg, var(--accent), #6f4ad9);
+    display: flex; align-items: center; justify-content: center;
+    box-shadow: 0 0 24px var(--accent-glow);
+    font-size: 20px;
+  }
+  .brand-name { font-family: var(--mono); font-size: 14px; letter-spacing: 0.02em; }
+  .brand-name b { color: var(--accent); }
+  .repo-link {
+    font-family: var(--mono); font-size: 12px; color: var(--text-dim);
+    text-decoration: none; padding: 6px 12px; border: 1px solid var(--text-faint);
+    border-radius: 6px; transition: all 150ms;
+  }
+  .repo-link:hover { border-color: var(--text-dim); color: var(--text); }
+
+  .hero { margin-bottom: 44px; }
+  h1 {
+    font-size: clamp(28px, 5vw, 44px); line-height: 1.1; letter-spacing: -0.02em;
+    font-weight: 700; margin-bottom: 14px;
+  }
+  h1 .accent { color: var(--accent); }
+  .lede { font-size: 16px; color: var(--text-dim); max-width: 640px; line-height: 1.55; }
+  .lede kbd {
+    font-family: var(--mono); background: var(--bg-elev); border: 1px solid #2a2e3a;
+    border-bottom-width: 2px; padding: 1px 7px; border-radius: 5px; color: var(--text); font-size: 12.5px;
+  }
+
+  .stage {
+    background: var(--bg-elev);
+    border: 1px solid #232631;
+    border-radius: 16px;
+    padding: 28px;
+    box-shadow: 0 18px 50px rgba(0,0,0,0.5);
+    margin-bottom: 32px;
+  }
+  .stage-header {
+    display: flex; align-items: center; justify-content: space-between;
+    margin-bottom: 20px; font-family: var(--mono); font-size: 12px; color: var(--text-dim);
+  }
+  .stage-header .pill {
+    padding: 4px 10px; border: 1px solid var(--text-faint); border-radius: 999px;
+  }
+  .stage-header .pill.live { color: var(--green); border-color: rgba(97, 217, 155, 0.4); }
+
+  /* The fake popup window */
+  .popup {
+    border-radius: 14px;
+    background: #16171c;
+    border: 1px solid #2a2e3a;
+    overflow: hidden;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 0;
+    min-height: 440px;
+  }
+  @media (max-width: 720px) { .popup { grid-template-columns: 1fr; } }
+  .cam {
+    background: #0a0a0d;
+    position: relative;
+    display: flex; align-items: center; justify-content: center;
+    overflow: hidden;
+    min-height: 280px;
+  }
+  .cam::before {
+    content: "CAMERA · MediaPipe Hands";
+    position: absolute; top: 12px; left: 14px;
+    font-family: var(--mono); font-size: 10px; color: var(--text-faint);
+    letter-spacing: 0.1em;
+  }
+  .hand-svg { width: 80%; max-width: 280px; }
+  .hand-svg .joint { fill: var(--accent); }
+  .hand-svg .bone  { stroke: var(--accent); stroke-width: 2.5; fill: none; opacity: 0.85; }
+  .panel {
+    background: #16181e;
+    padding: 22px 20px;
+    display: flex; flex-direction: column;
+  }
+  .panel-h {
+    font-weight: 700; font-size: 16px; margin-bottom: 4px;
+  }
+  .panel-sub {
+    font-family: var(--mono); font-size: 11px; color: var(--text-dim);
+    margin-bottom: 16px;
+  }
+  .prompt-box {
+    background: #1c1f27; border: 1px solid #262a35;
+    border-radius: 8px; padding: 12px 14px;
+    font-size: 13.5px; color: #d2d6df;
+    margin-bottom: 18px; line-height: 1.5;
+  }
+  .prompt-box code { font-family: var(--mono); color: var(--warm); font-size: 13px; }
+  .choices { display: flex; flex-direction: column; gap: 10px; flex: 1; }
+  .choice {
+    border-radius: 10px;
+    padding: 12px 14px;
+    border: 1px solid #262a35;
+    background: #1c1f27;
+    cursor: pointer;
+    transition: all 180ms ease-out;
+    display: flex; align-items: center; gap: 14px;
+    user-select: none;
+  }
+  .choice:hover { border-color: var(--text-dim); }
+  .choice .emoji { font-size: 28px; line-height: 1; }
+  .choice .name  { font-weight: 700; font-size: 14px; letter-spacing: 0.01em; }
+  .choice .act   { font-family: var(--mono); font-size: 11px; color: var(--text-dim); margin-top: 2px; }
+  .choice.active {
+    transform: scale(1.02);
+  }
+  .choice.active.approve { background: var(--green); color: #0a1b13; border-color: var(--green); }
+  .choice.active.deny    { background: var(--red);   color: #1b0a0d; border-color: var(--red); }
+  .choice.active.manual  { background: var(--lav);   color: #15172a; border-color: var(--lav); }
+  .choice.active .act    { color: rgba(0,0,0,0.6); }
+  .footer-row {
+    display: flex; justify-content: space-between; align-items: center;
+    margin-top: 14px;
+    font-family: var(--mono); font-size: 11px; color: var(--text-faint);
+  }
+
+  /* Try-it bar */
+  .try {
+    margin-top: 22px;
+    display: flex; gap: 10px; flex-wrap: wrap; justify-content: center;
+  }
+  .btn {
+    font-family: var(--mono); font-size: 12px;
+    background: var(--bg-card); color: var(--text);
+    border: 1px solid #2a2e3a; border-radius: 8px;
+    padding: 10px 16px; cursor: pointer;
+    transition: all 150ms; display: flex; align-items: center; gap: 8px;
+  }
+  .btn:hover { border-color: var(--accent); }
+  .btn .gesture { font-size: 18px; }
+  .btn[data-g="approve"]:hover { border-color: var(--green); color: var(--green); }
+  .btn[data-g="deny"]:hover    { border-color: var(--red);   color: var(--red); }
+  .btn[data-g="manual"]:hover  { border-color: var(--lav);   color: var(--lav); }
+
+  /* Exit codes */
+  .table {
+    width: 100%; border-collapse: collapse; font-family: var(--mono); font-size: 13px;
+  }
+  .table th, .table td { text-align: left; padding: 10px 12px; border-bottom: 1px solid #232631; }
+  .table th { color: var(--text-faint); font-weight: 500; font-size: 11px; letter-spacing: 0.1em; }
+  .table td.code { color: var(--accent); }
+  .table td.g    { color: var(--text); }
+
+  /* Section blocks */
+  section { margin-bottom: 28px; }
+  h2 { font-size: 14px; font-family: var(--mono); color: var(--text-dim); margin-bottom: 14px; letter-spacing: 0.08em; }
+
+  .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 14px; }
+  .card {
+    background: var(--bg-elev); border: 1px solid #232631; border-radius: 10px;
+    padding: 16px; font-size: 13.5px; color: var(--text-dim); line-height: 1.5;
+  }
+  .card b { color: var(--text); }
+  .card .pill {
+    font-family: var(--mono); font-size: 10px; padding: 2px 8px;
+    border: 1px solid var(--text-faint); border-radius: 999px; color: var(--text-faint);
+    margin-bottom: 8px; display: inline-block;
+  }
+
+  .install {
+    background: #0d0f14; border: 1px solid #1f222b; border-radius: 10px;
+    padding: 14px 16px; font-family: var(--mono); font-size: 12.5px;
+    color: #d2d6df; line-height: 1.7; overflow-x: auto;
+  }
+  .install .c { color: var(--text-faint); }
+  .install .v { color: var(--accent); }
+
+  .siblings { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 12px; }
+  .sib {
+    background: var(--bg-elev); border: 1px solid #232631; border-radius: 10px;
+    padding: 14px 16px; font-size: 13px;
+    text-decoration: none; color: var(--text-dim);
+    transition: border-color 150ms;
+  }
+  .sib:hover { border-color: var(--accent); color: var(--text); }
+  .sib b { color: var(--text); display: block; margin-bottom: 4px; }
+
+  footer { margin-top: 60px; text-align: center; font-family: var(--mono); font-size: 11px; color: var(--text-faint); }
+  footer a { color: var(--text-dim); text-decoration: none; }
+  footer a:hover { color: var(--accent); }
+
+  /* Result flash overlay */
+  .flash {
+    position: absolute; inset: 0;
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    opacity: 0; pointer-events: none;
+    transition: opacity 220ms;
+    text-align: center; padding: 20px;
+  }
+  .flash.show { opacity: 1; }
+  .flash .big { font-size: 22px; font-weight: 700; color: white; text-shadow: 0 2px 10px rgba(0,0,0,0.4); margin-bottom: 8px; }
+  .flash .sm  { font-size: 12px; font-family: var(--mono); color: rgba(255,255,255,0.85); }
+  .flash.approve { background: rgba(97, 217, 155, 0.92); }
+  .flash.deny    { background: rgba(255, 126, 138, 0.92); }
+  .flash.manual  { background: rgba(185, 191, 240, 0.92); color: #15172a; }
+
+  @keyframes pulse {
+    0%, 100% { opacity: 0.65; }
+    50%      { opacity: 1; }
+  }
+  .hand-svg.live .bone, .hand-svg.live .joint { animation: pulse 1.6s ease-in-out infinite; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div class="brand">
+      <div class="logo">✋</div>
+      <div class="brand-name"><b>hand-signal</b> · v0.2</div>
+    </div>
+    <a class="repo-link" href="https://github.com/CasterlyGit/hand-signal" target="_blank" rel="noopener">github →</a>
+  </header>
+
+  <div class="hero">
+    <h1>Webcam gestures.<br/><span class="accent">Hands-free Claude Code.</span></h1>
+    <p class="lede">
+      Claude asks <em>"approve this?"</em>. You hold up a thumb. Window flashes the result, exits with a code,
+      goes away. <kbd>👍</kbd> approves, <kbd>👎</kbd> denies, <kbd>✊</kbd> hands control back to you.
+      MediaPipe Hands, ~5% CPU, all local.
+    </p>
+  </div>
+
+  <!-- Live mock of the popup window -->
+  <div class="stage">
+    <div class="stage-header">
+      <span>hand-signal · confirm</span>
+      <span class="pill live">● demo</span>
+    </div>
+    <div class="popup" id="popup">
+      <div class="cam">
+        <svg class="hand-svg live" id="hand" viewBox="0 0 200 220">
+          <!-- A schematic hand skeleton — landmarks + bones. Simplified MediaPipe layout. -->
+          <g>
+            <!-- bones -->
+            <path class="bone" d="M 100 200 L 100 150" /> <!-- wrist → palm center -->
+            <!-- thumb -->
+            <path class="bone" d="M 100 180 L 70 160 L 55 130 L 45 100" />
+            <!-- index -->
+            <path class="bone" d="M 100 150 L 85 110 L 80 75 L 78 45" />
+            <!-- middle -->
+            <path class="bone" d="M 100 150 L 100 105 L 100 70 L 100 35" />
+            <!-- ring -->
+            <path class="bone" d="M 100 150 L 115 110 L 120 75 L 122 45" />
+            <!-- pinky -->
+            <path class="bone" d="M 100 150 L 130 115 L 138 85 L 142 60" />
+            <!-- joints -->
+            <circle class="joint" cx="100" cy="200" r="4" />
+            <circle class="joint" cx="100" cy="150" r="3.5" />
+            <circle class="joint" cx="70"  cy="160" r="3" />
+            <circle class="joint" cx="55"  cy="130" r="3" />
+            <circle class="joint" cx="45"  cy="100" r="3" />
+            <circle class="joint" cx="85"  cy="110" r="3" />
+            <circle class="joint" cx="80"  cy="75"  r="3" />
+            <circle class="joint" cx="78"  cy="45"  r="3" />
+            <circle class="joint" cx="100" cy="105" r="3" />
+            <circle class="joint" cx="100" cy="70"  r="3" />
+            <circle class="joint" cx="100" cy="35"  r="3" />
+            <circle class="joint" cx="115" cy="110" r="3" />
+            <circle class="joint" cx="120" cy="75"  r="3" />
+            <circle class="joint" cx="122" cy="45"  r="3" />
+            <circle class="joint" cx="130" cy="115" r="3" />
+            <circle class="joint" cx="138" cy="85"  r="3" />
+            <circle class="joint" cx="142" cy="60"  r="3" />
+          </g>
+        </svg>
+        <div class="flash" id="flash">
+          <div class="big" id="flashBig">APPROVED</div>
+          <div class="sm" id="flashSm">advisory — you click in Claude Code</div>
+        </div>
+      </div>
+      <div class="panel">
+        <div class="panel-h">Claude needs your decision</div>
+        <div class="panel-sub">advisory — you still click</div>
+        <div class="prompt-box">
+          Should Claude run: <code>rm -rf node_modules</code>?
+        </div>
+        <div class="choices">
+          <div class="choice" data-g="approve">
+            <span class="emoji">👍</span>
+            <div>
+              <div class="name">Thumbs up</div>
+              <div class="act">→ APPROVE · exit 0</div>
+            </div>
+          </div>
+          <div class="choice" data-g="deny">
+            <span class="emoji">👎</span>
+            <div>
+              <div class="name">Thumbs down</div>
+              <div class="act">→ DENY · exit 1</div>
+            </div>
+          </div>
+          <div class="choice" data-g="manual">
+            <span class="emoji">✊</span>
+            <div>
+              <div class="name">Fist</div>
+              <div class="act">→ I'LL DO IT · exit 2</div>
+            </div>
+          </div>
+        </div>
+        <div class="footer-row">
+          <span id="status">seeing: — · holding: —</span>
+          <span>q to cancel</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="try">
+      <button class="btn" data-g="approve"><span class="gesture">👍</span> simulate approve</button>
+      <button class="btn" data-g="deny"><span class="gesture">👎</span> simulate deny</button>
+      <button class="btn" data-g="manual"><span class="gesture">✊</span> simulate "I'll do it"</button>
+    </div>
+  </div>
+
+  <section>
+    <h2>EXIT CODES</h2>
+    <table class="table">
+      <thead><tr><th>code</th><th>meaning</th><th>gesture</th></tr></thead>
+      <tbody>
+        <tr><td class="code">0</td><td class="g">approve</td><td>👍 thumbs up</td></tr>
+        <tr><td class="code">1</td><td class="g">deny</td><td>👎 thumbs down</td></tr>
+        <tr><td class="code">2</td><td class="g">manual — user will handle it</td><td>✊ fist</td></tr>
+        <tr><td class="code">3</td><td class="g">timeout</td><td>—</td></tr>
+        <tr><td class="code">4</td><td class="g">quit / esc</td><td>—</td></tr>
+      </tbody>
+    </table>
+  </section>
+
+  <section>
+    <h2>WHY</h2>
+    <div class="cards">
+      <div class="card">
+        <span class="pill">flow</span>
+        <b>No alt-tab to approve.</b> Every Claude Code permission prompt usually costs you a context switch — mouse, click, look away from the diff. A gesture keeps your eyes where the work is.
+      </div>
+      <div class="card">
+        <span class="pill">silence</span>
+        <b>Public-space coding.</b> Voice is awkward in a coffee shop. A tiny thumbs-up to the webcam is invisible to everyone except your laptop.
+      </div>
+      <div class="card">
+        <span class="pill">safe</span>
+        <b>Advisory by default.</b> The popup tells you what you signaled and asks you to click in Claude Code yourself. Wiring to a real <code>PreToolUse</code> hook is intentionally opt-in.
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <h2>RUN IT YOURSELF</h2>
+    <pre class="install"><span class="c"># clone + install (one shot)</span>
+git clone <span class="v">https://github.com/CasterlyGit/hand-signal.git</span>
+cd hand-signal &amp;&amp; ./scripts/setup.sh
+
+<span class="c"># try the focused popup</span>
+source .venv/bin/activate
+handsignal ask <span class="v">"Should Claude run: rm -rf node_modules?"</span>
+
+<span class="c"># or the always-on streaming daemon</span>
+handsignal listen --preview</pre>
+  </section>
+
+  <section>
+    <h2>SIBLINGS — THE VOICE / GESTURE / AGENT STACK</h2>
+    <div class="siblings">
+      <a class="sib" href="https://casterlygit.github.io/laptop-dictation/" target="_blank"><b>laptop-dictation</b>voice in — push-to-talk Whisper that auto-pastes &amp; presses Enter for you.</a>
+      <a class="sib" href="https://github.com/CasterlyGit/hand-signal" target="_blank"><b>hand-signal</b>gesture in — this repo. ✋👍✊ confirmations for hands-free Claude.</a>
+      <a class="sib" href="https://casterlygit.github.io/curby/" target="_blank"><b>curby</b>agent dispatcher — voice task → autonomous Claude Code agent with a live status puck.</a>
+    </div>
+  </section>
+
+  <footer>
+    <a href="https://github.com/CasterlyGit/hand-signal">github.com/CasterlyGit/hand-signal</a>
+    · <a href="https://github.com/CasterlyGit/hand-signal/releases/tag/v0.2.0">v0.2.0 release notes</a>
+    · MIT
+  </footer>
+</div>
+
+<script>
+(function () {
+  const popup    = document.getElementById('popup');
+  const flash    = document.getElementById('flash');
+  const flashBig = document.getElementById('flashBig');
+  const flashSm  = document.getElementById('flashSm');
+  const status   = document.getElementById('status');
+  const choices  = document.querySelectorAll('.choice');
+
+  const meta = {
+    approve: { label: 'YOU SIGNALED: APPROVE',    sub: 'now click in Claude Code yourself',  gesture: 'thumbs_up' },
+    deny:    { label: 'YOU SIGNALED: DENY',       sub: 'now click in Claude Code yourself',  gesture: 'thumbs_down' },
+    manual:  { label: "YOU SIGNALED: I'LL DO IT", sub: 'window will close — over to you',     gesture: 'fist' },
+  };
+
+  function clearActive() {
+    choices.forEach(c => c.classList.remove('active', 'approve', 'deny', 'manual'));
+  }
+
+  function trigger(g) {
+    clearActive();
+    const row = document.querySelector(`.choice[data-g="${g}"]`);
+    if (row) row.classList.add('active', g);
+    status.textContent = `seeing: ${meta[g].gesture}  ·  holding: ${meta[g].gesture}`;
+
+    // result flash
+    flash.classList.remove('approve', 'deny', 'manual');
+    flash.classList.add(g, 'show');
+    flashBig.textContent = meta[g].label;
+    flashSm.textContent  = meta[g].sub;
+
+    setTimeout(() => {
+      flash.classList.remove('show');
+      setTimeout(() => {
+        clearActive();
+        status.textContent = 'seeing: — · holding: —';
+      }, 350);
+    }, 1500);
+  }
+
+  document.querySelectorAll('.btn').forEach(b => {
+    b.addEventListener('click', () => trigger(b.dataset.g));
+  });
+  document.querySelectorAll('.choice').forEach(c => {
+    c.addEventListener('click', () => trigger(c.dataset.g));
+  });
+
+  // Idle cycle so the page feels alive on first load.
+  let cycle = ['approve', 'deny', 'manual'];
+  let idx = 0;
+  let cycleTimer = null;
+  function startCycle() {
+    cycleTimer = setTimeout(function tick() {
+      trigger(cycle[idx % cycle.length]);
+      idx++;
+      cycleTimer = setTimeout(tick, 3200);
+    }, 1200);
+  }
+  startCycle();
+
+  // Stop the auto-cycle as soon as the user interacts.
+  document.addEventListener('click', () => {
+    if (cycleTimer) { clearTimeout(cycleTimer); cycleTimer = null; }
+  }, { once: true });
+})();
+</script>
+</body>
+</html>
