@@ -45,7 +45,8 @@ def config() -> None:
 @cli.command()
 @click.option("--keystrokes", is_flag=True, help="Override config: enable keystroke injection.")
 @click.option("--websocket", is_flag=True, help="Override config: enable websocket broadcast.")
-def listen(keystrokes: bool, websocket: bool) -> None:
+@click.option("--preview", is_flag=True, help="Open a window showing the webcam + landmarks + current gesture.")
+def listen(keystrokes: bool, websocket: bool, preview: bool) -> None:
     """Run the gesture daemon. Hold a recognized gesture in front of the webcam to fire."""
     cfg = load_config()
     if keystrokes:
@@ -53,7 +54,18 @@ def listen(keystrokes: bool, websocket: bool) -> None:
     if websocket:
         cfg.output.websocket_enabled = True
     from .daemon import run_daemon
-    run_daemon(cfg)
+    run_daemon(cfg, preview=preview)
+
+
+@cli.command()
+@click.argument("prompt", required=False, default="Approve this action?")
+@click.option("--timeout", default=15.0, show_default=True, help="Seconds before auto-timeout.")
+def ask(prompt: str, timeout: float) -> None:
+    """Pop up a gesture confirmation window. Exit codes: 0=approve, 1=deny, 2=manual, 3=timeout, 4=quit."""
+    cfg = load_config()
+    from .ask import run_ask
+    code = run_ask(cfg, prompt=prompt, timeout_s=timeout)
+    raise SystemExit(code)
 
 
 @cli.command()

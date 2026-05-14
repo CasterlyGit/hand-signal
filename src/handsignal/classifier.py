@@ -136,7 +136,8 @@ def classify_sequence(history: Sequence[Optional[GestureLabel]], min_agree: int)
     Used by the daemon to enforce the hold-time requirement."""
     if len(history) < min_agree:
         return None
-    tail = history[-min_agree:]
+    # `history` may be a deque, which doesn't support slice indexing.
+    tail = list(history)[-min_agree:]
     first = tail[0]
     if first is None:
         return None
