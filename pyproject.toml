@@ -1,0 +1,39 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "hand-signal"
+version = "0.1.0"
+description = "Hands-free confirmations for Claude Code: hold a gesture in front of your webcam, agent continues. MediaPipe + tiny classifier."
+readme = "README.md"
+requires-python = ">=3.9"
+authors = [{ name = "CasterlyGit" }]
+license = { text = "MIT" }
+dependencies = [
+    "click>=8.1",
+    "rich>=13.0",
+    "mediapipe>=0.10.14",
+    "opencv-python>=4.10",
+    "numpy>=1.26",
+    "pynput>=1.7",
+    "websockets>=12.0",
+    "tomli>=2.0; python_version<'3.11'",
+    "typing-extensions>=4.0; python_version<'3.11'",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8.0", "pytest-cov>=5.0"]
+
+[project.scripts]
+handsignal = "handsignal.cli:cli"
+
+[tool.setuptools]
+package-dir = { "" = "src" }
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
